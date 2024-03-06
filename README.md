@@ -7,6 +7,8 @@ Sopports standard CAN frames only
 
 Based on project cannelloni: https://github.com/mguentner/cannelloni 
 
+**This is beta stage software. Don't use in productive environment.**
+
 ### Background
 Project cannelloni provides bidirectional transfer of CAN frames between two (linux) machines using IP protocols UDP, TCP or SCTP.
 
