@@ -24,9 +24,9 @@ Beside the linux machine, e.g. a raspberry pi, you need
 * Connect CAN_L and CAN_H of transceiver to the physical CAN bus. It's good idea to use twisted pair cable. Conncetion of GND is optional. Check, if a termination is needed (120 Ohm).
 
 ### Software
-To build and flash **VSCode with PlatformIO** or **Arduino GUI** can be used.
+To build and flash **VSCode with PlatformIO** or **Arduino IDE** can be used.
 * This project is using VScode
-* If you prefer Arduino GUI please create a new project, copy content of file `main.cpp` to your sketch and copy file `user_config.h` to the same folder.
+* If you prefer Arduino IDE please create a new project, copy content of file `main.cpp` to your sketch and copy file `user_config.h` to the same folder.
 
 ### Get started
 * Install [CAN library by Sandeep Mistry](https://github.com/sandeepmistry/arduino-CAN/blob/master/README.md)
