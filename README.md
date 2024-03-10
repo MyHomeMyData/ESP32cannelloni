@@ -16,6 +16,8 @@ This projects runs one cannelloni node on an ESP32 controller. A typical setup c
 
 {physical can bus} <-> {can tranceiver} <-> {ESP32} <-> WiFi <-> {linux machine} <-> {virtual can bus} <-> {application}
 
+For linux implementation please refer to [documentaion of project cannelloni](https://github.com/mguentner/cannelloni). Another very good description is available [here](https://crycode.de/socketcan-ueber-ethernet-mit-cannelloni).
+
 ### Hardware
 Beside the linux machine, e.g. a raspberry pi, you need
 * ESP32 dev kit, e.g. [this](https://www.amazon.de/KeeYees-Bluetooth-Internet-Entwicklungsboard-ESP-WROOM-32/dp/B08TBPBJGV/ref=sr_1_29?dib=eyJ2IjoiMSJ9.lvAmX3kb20wVzwOkSJ5hlSNOy-PoBZzuEBRa2NwVxMRxKaE688RLmv0bySbHAKxoo-viHSg8CteSxoe3mpZrma77IpbtpY0u-lcrSfwFv3TIBg_yADvP-qeyj_wWHWb5tpkd63Hl9p8SJWzoop4SZL-36f2JKBj7ki4AEuRaET4qRodsU4dwoOL0F3kaAKUp75cPhNG9O7HYieLHN-sY4_aO-UY-4Oecz-zjgekEXkqK_AcFu2Gq3dsRJIoNQ3Fz9KVSzwxGxK3byTMPbUtn7J0lNiVrXdzpUeCpOwNaTKc.5PxPgAt0FpAP4RR0V_t3JdMtFp5HpWN0pIcxk42lHk0&dib_tag=se&keywords=keeyees&qid=1709743502&sr=8-29)
