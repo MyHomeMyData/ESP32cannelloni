@@ -7,7 +7,9 @@
 
   Based on project cannelloni: https://github.com/mguentner/cannelloni 
 
-  06.03.2024 MyHomeMyData
+  06.03.2024 MyHomeMyData V0.1.0
+
+  23.03.2024 MyHomeMyData V0.1.1 Reset CAN buffer on connection to server
 
 MIT License
 
@@ -42,7 +44,7 @@ SOFTWARE.
 
 #include "user_config.h"    // Import user specific configuration data
 
-const char* PGM_INFO = "Cannelloni light for ESP32 V0.10";
+const char* PGM_INFO = "Cannelloni light for ESP32 V0.1.1";
 
 const String CANNELLONI_TOKEN = "CANNELLONIv1";
 const uint8_t LEN_CAN_MSG_MAX = 13;     // Max. length of a CAN frame as TCP message: 4 (CAN ID) + 1 (dlc) + 8 (data bytes)
@@ -247,6 +249,10 @@ bool connectToServer(const char* host, uint16_t port) {
     htmlLog("Cannelloni server NOT confirmed.");
     Serial.println("Cannelloni server NOT confirmed.");
   }
+  // Server successfully connected. Initialize buffer and counters for CAN messages:
+  ptr_write = ptr_read = base_ptr;
+  cnt_can_rx_total = cnt_tcp_tx_total = 0;
+  micros_max = micros_total = 0;
   return true;
 }
 

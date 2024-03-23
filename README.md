@@ -49,3 +49,14 @@ cannelloni -I vcan0 -C s -p -t 20000 -l 2001
 * ESP32cannelloni provides a simple web interface reachable under `http://ESP32cannelloni/` or `http://ESP32cannelloni.local` dependent on your network configuration.
 
 ![web interface](image.png)
+
+## Changelog
+<!--
+    Placeholder for the next version (at the beginning of the line):
+    ### **WORK IN PROGRESS**
+-->
+### 0.1.1 (2024-03-23)
+* (MyHomeMyData) Reset CAN buffer on connection to cannelloni server
+
+### 0.1.0 (2024-03-06)
+* (MyHomeMyData) Initial version
