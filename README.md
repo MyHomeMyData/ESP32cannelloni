@@ -55,6 +55,11 @@ cannelloni -I vcan0 -C s -p -t 20000 -l 2001
     Placeholder for the next version (at the beginning of the line):
     ### **WORK IN PROGRESS**
 -->
+
+### 0.1.2 (2024-03-28)
+* (MyHomeMyData) Force attempt to reconnect to cannelloni server in case of TCP communication error
+* (MyHomeMyData) Force restart of ESP32 in case of stalled TCP communication
+
 ### 0.1.1 (2024-03-23)
 * (MyHomeMyData) Reset CAN buffer on connection to cannelloni server
 

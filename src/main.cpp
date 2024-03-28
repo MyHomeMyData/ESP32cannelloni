@@ -11,6 +11,9 @@
 
   23.03.2024 MyHomeMyData V0.1.1 Reset CAN buffer on connection to server
 
+  28.03.2024 MyHomeMyData V0.1.2 Force attempt to reconnect to cannelloni server in case of TCP communication error
+                                 Force restart of ESP32 in case of stalled TCP communication
+
 MIT License
 
 Copyright (c) 2024 MyHomeMyData
@@ -44,7 +47,7 @@ SOFTWARE.
 
 #include "user_config.h"    // Import user specific configuration data
 
-const char* PGM_INFO = "Cannelloni light for ESP32 V0.1.1";
+const char* PGM_INFO = "Cannelloni light for ESP32 V0.1.2";
 
 const String CANNELLONI_TOKEN = "CANNELLONIv1";
 const uint8_t LEN_CAN_MSG_MAX = 13;     // Max. length of a CAN frame as TCP message: 4 (CAN ID) + 1 (dlc) + 8 (data bytes)
@@ -62,12 +65,12 @@ uint8_t* base_ptr   = can_buf;          // Pointer to start of CAN buffer
 uint8_t* ptr_write  = base_ptr;         // Pointer to next buffer position for writing
 uint8_t* ptr_read   = base_ptr;         // Pointer to next buffer position for reading
 
-uint32_t cnt_can_rx_total   = 0;    // Total number of CAN frames received on physical CAN bus
-uint32_t cnt_can_tx_total   = 0;    // Total number of CAN frames transmitted on physical CAN bus
-uint32_t cnt_tcp_rx_total   = 0;    // Total number of tcp frames received from cannelloni server (one frame may contain more than one CAN frame)
-uint32_t cnt_tcp_tx_total   = 0;    // Total number of tcp frames transmitted to cannelloni server (one CAN frame only)
-uint32_t cnt_tcp_tx_retries = 0;    // Number of failed tcp transmitions to cannelloni server
-uint32_t cnt_tcp_tx_pending = 0;    // Number of can frames pending (received but not yet sent to cannelloni server)
+uint64_t cnt_can_rx_total   = 0;    // Total number of CAN frames received on physical CAN bus
+uint64_t cnt_can_tx_total   = 0;    // Total number of CAN frames transmitted on physical CAN bus
+uint64_t cnt_tcp_rx_total   = 0;    // Total number of tcp frames received from cannelloni server (one frame may contain more than one CAN frame)
+uint64_t cnt_tcp_tx_total   = 0;    // Total number of tcp frames transmitted to cannelloni server (one CAN frame only)
+uint64_t cnt_tcp_tx_pending = 0;    // Number of can frames pending (received but not yet sent to cannelloni server)
+uint16_t cnt_tcp_tx_retries = 0;    // Number of failed tcp transmitions to cannelloni server
 
 WebServer server(80);
 WiFiClient client;
@@ -357,11 +360,27 @@ void sendCanDataToServer() {
       cnt_tcp_tx_total++;
       ibuf_read = (++ibuf_read % CNT_CAN_MSG_MAX);
       ptr_read = base_ptr+LEN_CAN_MSG_MAX*ibuf_read;
+      cnt_tcp_tx_retries = 0;
     } else {
       cnt_tcp_tx_retries++;
       sprintf(cbuf, "ERROR: TCP write() did not send all data: size=%d; sent=%d; duration=%d us",size,sent,micros_diff);
       htmlLog(cbuf);
       Serial.println(cbuf);
+      if (cnt_tcp_tx_retries <= 3) {
+        // Try to reconnet to server
+        sprintf(cbuf, "Force attempt to reconnect to cannelloni server ...");
+        htmlLog(cbuf);
+        Serial.println(cbuf);
+        client.stop();    // Force attempt to reconnect to server
+      } else {
+        // TCP communication stalled => Force restart of ESP32
+        sprintf(cbuf, "ERROR: TCP write() stalled. ESP32 will be restarted after 5 seconds.");
+        htmlLog(cbuf);
+        Serial.println(cbuf);
+        client.stop();    // Close connection to server
+        delay(5000);
+        ESP.restart();
+      }
     }
     cnt_tcp_tx_pending = cnt_can_rx_total - cnt_tcp_tx_total;
   }
