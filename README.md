@@ -56,6 +56,9 @@ cannelloni -I vcan0 -C s -p -t 20000 -l 2001
     ### **WORK IN PROGRESS**
 -->
 
+### 0.1.3 (2024-03-30)
+* (MyHomeMyData) Bugfix: Buffer pointes were wrong after reconnection to server
+
 ### 0.1.2 (2024-03-28)
 * (MyHomeMyData) Force attempt to reconnect to cannelloni server in case of TCP communication error
 * (MyHomeMyData) Force restart of ESP32 in case of stalled TCP communication

@@ -14,6 +14,8 @@
   28.03.2024 MyHomeMyData V0.1.2 Force attempt to reconnect to cannelloni server in case of TCP communication error
                                  Force restart of ESP32 in case of stalled TCP communication
 
+  30.03.2024 MyHomeMyData V0.1.3 Bugfix: Buffer pointes were wrong after reconnection to server
+
 MIT License
 
 Copyright (c) 2024 MyHomeMyData
@@ -47,7 +49,7 @@ SOFTWARE.
 
 #include "user_config.h"    // Import user specific configuration data
 
-const char* PGM_INFO = "Cannelloni light for ESP32 V0.1.2";
+const char* PGM_INFO = "Cannelloni light for ESP32 V0.1.3";
 
 const String CANNELLONI_TOKEN = "CANNELLONIv1";
 const uint8_t LEN_CAN_MSG_MAX = 13;     // Max. length of a CAN frame as TCP message: 4 (CAN ID) + 1 (dlc) + 8 (data bytes)
@@ -125,7 +127,8 @@ void htmlLog(const char * cbuf) {
 // Core 0 Tasks:
 void printStats() {
   if (DEBUG > 0) {
-    Serial.print("Statistics: CAN rx=");
+    Serial.print(timeStr());
+    Serial.print(": CAN rx=");
     Serial.print(cnt_can_rx_total);
     Serial.print("; tcp tx pending=");
     Serial.print(cnt_tcp_tx_pending);
@@ -254,6 +257,7 @@ bool connectToServer(const char* host, uint16_t port) {
   }
   // Server successfully connected. Initialize buffer and counters for CAN messages:
   ptr_write = ptr_read = base_ptr;
+  ibuf_read = ibuf_write = 0;
   cnt_can_rx_total = cnt_tcp_tx_total = 0;
   micros_max = micros_total = 0;
   return true;
