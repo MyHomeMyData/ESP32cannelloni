@@ -45,7 +45,7 @@ SOFTWARE.
 #include <CAN.h>            // CAN library by Sandeep Mistry  
                             // https://github.com/sandeepmistry/arduino-CAN/blob/master/README.md
 
-#include "user_config.h"    // Import user specific configuration data
+#include "my_user_config.h"    // Import user specific configuration data
 
 const char* PGM_INFO = "Cannelloni light for ESP32 V0.1.2";
 
@@ -107,7 +107,7 @@ double time_now; //Zeitpunkt jetzt
 int lastday=0;
 bool ntp_done = false;
 
-const uint8_t DEBUG = 0;
+const uint8_t DEBUG = 1;
 
 // Logging:
 String timeStr() {
@@ -124,8 +124,9 @@ void htmlLog(const char * cbuf) {
 
 // Core 0 Tasks:
 void printStats() {
-  if (DEBUG > 0) {
-    Serial.print("Statistics: CAN rx=");
+  if ( (DEBUG > 0) && (serverAvailable) ) {
+    Serial.print(timeStr());
+    Serial.print(": CAN rx=");
     Serial.print(cnt_can_rx_total);
     Serial.print("; tcp tx pending=");
     Serial.print(cnt_tcp_tx_pending);
@@ -215,7 +216,7 @@ bool connectToServer(const char* host, uint16_t port) {
   Serial.print(port);
   Serial.print(" ");
 
-  unsigned long timeout = millis()+30000;  // 15 seconds timeout
+  unsigned long timeout = millis()+3600000;  // 1 hour timeout
   while ( (!client.connect(host, port)) && (millis()<timeout) ) {
     Serial.print(".");
     loopWebServer();
@@ -255,6 +256,7 @@ bool connectToServer(const char* host, uint16_t port) {
   // Server successfully connected. Initialize buffer and counters for CAN messages:
   ptr_write = ptr_read = base_ptr;
   cnt_can_rx_total = cnt_tcp_tx_total = 0;
+  ibuf_read = ibuf_write = 0;
   micros_max = micros_total = 0;
   return true;
 }
