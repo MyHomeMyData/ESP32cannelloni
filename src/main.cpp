@@ -81,7 +81,6 @@ uint8_t* can_ptr_write  = base_ptr_write+LEN_UDP_HEADER;
 
 bool switch_to_next_buf = false;  // Switch to next udp buffer before storing next CAN message
 const int MILLIS_WAIT_MAX = 20;   // Max. waiting time until sending buffered CAN messages
-bool canBusy = false;             // canOnReceive() is active
 bool can_storage_busy = false;    // Data storage within canOnReceive() is active
 uint16_t cnt_buf_to_send = 0;     // Number of udp buffers ready to be sent via udp
 uint64_t cnt_udp_sent = 0;        // Total number of udü buffers sent
@@ -93,6 +92,7 @@ AsyncUDP udpListener;             // Udp listener for receiving packages from ca
 AsyncUDP udpRemote;               // Upd remote connection to cannelloni host for sending upd packages
 #else
 const String CANNELLONI_TOKEN = "CANNELLONIv1";
+const uint8_t LEN_CAN_DATA_MAX   = 8;
 const uint8_t LEN_CAN_MSG_MAX = 13;     // Max. length of a CAN frame as TCP message: 4 (CAN ID) + 1 (dlc) + 8 (data bytes)
 const int CNT_CAN_MSG_MAX     = 512;    // Max. number of buffered CAN messages
 const int LEN_CAN_BUF         = LEN_CAN_MSG_MAX*CNT_CAN_MSG_MAX;
@@ -114,6 +114,7 @@ uint64_t cnt_tcp_rx_total   = 0;    // Total number of tcp frames received from 
 uint64_t cnt_tcp_tx_total   = 0;    // Total number of tcp frames transmitted to cannelloni server (one CAN frame only)
 uint64_t cnt_tcp_tx_pending = 0;    // Number of can frames pending (received but not yet sent to cannelloni server)
 uint16_t cnt_tcp_tx_retries = 0;    // Number of failed tcp transmitions to cannelloni server
+bool canBusy = false;               // canOnReceive() is active
 
 WebServer server(80);
 WiFiClient client;
