@@ -17,6 +17,8 @@
   31.03.2024 MyHomeMyData V0.2.0 Added support for UDP protocol
                                  Select protocol via user_config.h
 
+  04.04.2024 MyHomeMyData V0.2.1 Bugfix: Avoid resets during startup
+
 MIT License
 
 Copyright (c) 2024 MyHomeMyData
@@ -54,9 +56,9 @@ SOFTWARE.
                             // https://github.com/sandeepmistry/arduino-CAN/blob/master/README.md
 
 #ifdef UDP_PROTOCOL
-const char* PGM_INFO = "Cannelloni light for ESP32 V0.2.0 UDP";
+const char* PGM_INFO = "Cannelloni light for ESP32 V0.2.1 UDP";
 #else
-const char* PGM_INFO = "Cannelloni light for ESP32 V0.2.0 TCP";
+const char* PGM_INFO = "Cannelloni light for ESP32 V0.2.1 TCP";
 #endif
 
 #ifdef UDP_PROTOCOL
@@ -593,6 +595,10 @@ void sendCanDataToHost() {
 }
 
 void canOnReceive(int packetSize) {
+  if (!hostAvailable) {
+    //Serial.println("Received CAN frame skipped due to missing Wifi connection.");
+    return;
+  }
   if (canBusy) {
     sprintf(cbuf, "WARNING: canOnReceive() is busy. Skipping CAN frame.");
     htmlLog(cbuf);
@@ -600,11 +606,6 @@ void canOnReceive(int packetSize) {
     return;
   }
   canBusy = true;
-
-  if (!hostAvailable) {
-    //Serial.println("Received CAN frame skipped due to missing Wifi connection.");
-    return;
-  }
   // received a CAN frame
   if (CAN.packetExtended()) {
     //Serial.print("Received extended CAN frame. Skipping.");
