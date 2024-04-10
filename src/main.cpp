@@ -19,7 +19,9 @@
 
   04.04.2024 MyHomeMyData V0.2.1 Bugfix: Avoid resets during startup
 
-  04.04.2024 MyHomeMyData V0.2.2 Force restart of ESP32 after 5 consecutive failures of UDP send attempts
+  10.04.2024 MyHomeMyData V0.2.2 Force restart of ESP32 after 5 consecutive failures of UDP send attempts
+
+  10.04.2024 MyHomeMyData V0.3.0 Added option for Web-Updates, added Reset-Button
 
 MIT License
 
@@ -54,13 +56,14 @@ SOFTWARE.
 #include "AsyncUDP.h"       // https://github.com/espressif/arduino-esp32/tree/master/libraries/AsyncUDP
 #endif
 #include <ESPmDNS.h>
+#include <HTTPUpdateServer.h>
 #include <CAN.h>            // CAN library by Sandeep Mistry  
                             // https://github.com/sandeepmistry/arduino-CAN/blob/master/README.md
 
 #ifdef UDP_PROTOCOL
-const char* PGM_INFO = "Cannelloni light for ESP32 V0.2.2 UDP";
+const char* PGM_INFO = "Cannelloni light for ESP32 V0.3.0 UDP";
 #else
-const char* PGM_INFO = "Cannelloni light for ESP32 V0.2.2 TCP";
+const char* PGM_INFO = "Cannelloni light for ESP32 V0.3.0 TCP";
 #endif
 
 #ifdef UDP_PROTOCOL
@@ -121,6 +124,8 @@ uint16_t cnt_tcp_tx_retries = 0;    // Number of failed tcp transmitions to cann
 bool canBusy = false;               // canOnReceive() is active
 
 WebServer server(80);
+HTTPUpdateServer httpUpdater;
+
 WiFiClient client;
 bool hostAvailable = false;           // true, if TCP connection to server is established
 bool serverConfirmed = false;           // true, if server sent correct identification string
@@ -239,7 +244,10 @@ void handleRoot() {
   message += "<th align=center>"+timeStr()+"</th><th align=center>TX</th><th align=center>RX</th></tr>";
   message += "<tr><td align=left>TCP Transmission Summary</td><td align=right>"+String(cnt_tcp_tx_total)+"</td><td align=right>"+String(cnt_tcp_rx_total)+"</td></tr>";
   message += "<tr><td align=left>CAN Transmission Summary</td><td align=right>"+String(cnt_can_tx_total)+"</td><td align=right>"+String(cnt_can_rx_total)+"</td>";
-  message += "</tr></table>";
+  message += "</tr></table><br>";
+
+  message += "<a href=\"update\"><button class=\"button\">Upload Firmware</button></a>";
+  message += "<a href=\"/restart\" target=\"_blank\"><button class=\"button\">RESTART ESP32</button></a>";
 
   message += "<h2>Log:</h2>";
 
@@ -252,6 +260,24 @@ void handleRoot() {
   message += "</font></body></html>"; 
   
   server.send(200,"text/html", message);
+}
+
+void handleRestart() {
+  hostAvailable = false;
+  String message = "<html><head><title>ESP32 restart</title>";
+  message += "<style>body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }</style></head>"+
+  message += "<body><h1>ESP32 is restarting - you may close this tab</h1>";
+  message += "</body></html>";
+  server.send(200,"text/html", message);
+
+  delay(1500);
+  #ifdef UDP_PROTOCOL
+  udpRemote.close();    // Close UDP connection
+  #else
+  client.stop();        // Close TCP connection
+  #endif
+  server.client().stop();
+  ESP.restart();
 }
 
 void handleNotFound(){
@@ -554,11 +580,13 @@ void sendCanDataToHost() {
       Serial.println(cbuf);
       if (++cnt_tcp_tx_retries > 5) {
         // UDP failed => Force restart of ESP32
+        hostAvailable = false;
         sprintf(cbuf, "ERROR: UDP write() failed several tims. ESP32 will be restarted after 5 seconds.");
         htmlLog(cbuf);
         Serial.println(cbuf);
         udpRemote.close();    // Close UDP connection
         delay(5000);
+        server.client().stop();
         ESP.restart();
       }
     } else {
@@ -599,6 +627,7 @@ void sendCanDataToHost() {
         Serial.println(cbuf);
         client.stop();    // Close connection to server
         delay(5000);
+        server.client().stop();
         ESP.restart();
       }
     }
@@ -720,6 +749,7 @@ void WiFiEvent(WiFiEvent_t event)
             if (++cnt_wifi_connect_incomplete > 4) {
               Serial.println("WiFi connection failed. Restarting ESP ...");
               delay(100);
+              server.client().stop();
               ESP.restart();
             }
             break;
@@ -734,6 +764,10 @@ void WiFiEvent(WiFiEvent_t event)
             // NTP Zeit aktualisieren
             if (MDNS.begin("esp32")) {
               Serial.println("MDNS-Responder running.");
+              MDNS.addService("http", "tcp", 80);
+              sprintf(cbuf, "HTTPUpdateServer ready! Open http://%s/update in your browser to upload firmware image.", WiFi.getHostname());
+              htmlLog(cbuf);
+              Serial.println(cbuf);
             }
             configTzTime(TZ_INFO, NTP_SERVER); 
             getLocalTime(&local, 5000);
@@ -744,6 +778,8 @@ void WiFiEvent(WiFiEvent_t event)
             #ifdef UDP_PROTOCOL
             setupUdpListener(PORT_LISTEN);
             #endif
+            httpUpdater.setup(&server);
+            server.on("/restart", handleRestart);
             server.begin();
             Serial.println("HTTP-server started.");
             break;
