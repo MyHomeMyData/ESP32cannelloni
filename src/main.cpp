@@ -19,6 +19,8 @@
 
   04.04.2024 MyHomeMyData V0.2.1 Bugfix: Avoid resets during startup
 
+  04.04.2024 MyHomeMyData V0.2.2 Force restart of ESP32 after 5 consecutive failures of UDP send attempts
+
 MIT License
 
 Copyright (c) 2024 MyHomeMyData
@@ -56,9 +58,9 @@ SOFTWARE.
                             // https://github.com/sandeepmistry/arduino-CAN/blob/master/README.md
 
 #ifdef UDP_PROTOCOL
-const char* PGM_INFO = "Cannelloni light for ESP32 V0.2.1 UDP";
+const char* PGM_INFO = "Cannelloni light for ESP32 V0.2.2 UDP";
 #else
-const char* PGM_INFO = "Cannelloni light for ESP32 V0.2.1 TCP";
+const char* PGM_INFO = "Cannelloni light for ESP32 V0.2.2 TCP";
 #endif
 
 #ifdef UDP_PROTOCOL
@@ -550,6 +552,17 @@ void sendCanDataToHost() {
       sprintf(cbuf, "ERROR: UDP write() did not send all data: size=%d; sent=%d; duration=%d us",size,sent,micros_diff);
       htmlLog(cbuf);
       Serial.println(cbuf);
+      if (++cnt_tcp_tx_retries > 5) {
+        // UDP failed => Force restart of ESP32
+        sprintf(cbuf, "ERROR: UDP write() failed several tims. ESP32 will be restarted after 5 seconds.");
+        htmlLog(cbuf);
+        Serial.println(cbuf);
+        udpRemote.close();    // Close UDP connection
+        delay(5000);
+        ESP.restart();
+      }
+    } else {
+      cnt_tcp_tx_retries = 0;
     }
   }
   #else
