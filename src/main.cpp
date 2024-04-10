@@ -19,7 +19,7 @@
 
   04.04.2024 MyHomeMyData V0.2.1 Bugfix: Avoid resets during startup
 
-  04.04.2024 MyHomeMyData V0.2.2 Force restart of ESP32 after 5 consecutive failures of UDP send attempts
+  10.04.2024 MyHomeMyData V0.2.2 Force restart of ESP32 after 5 consecutive failures of UDP send attempts
 
 MIT License
 
