@@ -59,6 +59,9 @@ To build and flash **VSCode with PlatformIO** or **Arduino IDE** can be used.
     ### **WORK IN PROGRESS**
 -->
 
+### 0.3.0 (2024-04-10)
+* (MyHomeMyData) Added option for Web-Updates, added Reset-Button
+
 ### 0.2.2 (2024-04-10)
 * (MyHomeMyData) Force restart of ESP32 after 5 consecutive failures of UDP send attempts
 
