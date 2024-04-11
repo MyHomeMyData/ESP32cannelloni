@@ -23,6 +23,8 @@
 
   10.04.2024 MyHomeMyData V0.3.0 Added option for Web-Updates, added Reset-Button
 
+  11.04.2024 MyHomeMyData V0.3.1 Hint for start of cannelloni corrected
+
 MIT License
 
 Copyright (c) 2024 MyHomeMyData
@@ -404,7 +406,7 @@ void setupUdpListener(uint16_t port) {
       sprintf(cbuf, "Udp listener started.");
       htmlLog(cbuf);
       Serial.println(cbuf);
-      sprintf(cbuf, "Start cannelloni on host, e.g. for vcan0: cannelloni -I vcan0 -R %s -r %d -l %d",WiFi.localIP().toString().c_str(),PORT_REMOTE,PORT_LISTEN);
+      sprintf(cbuf, "Start cannelloni on host, e.g. for vcan0: cannelloni -I vcan0 -R %s -r %d -l %d",WiFi.localIP().toString().c_str(),PORT_LISTEN,PORT_REMOTE);
       htmlLog(cbuf);
       Serial.println(cbuf);
   }

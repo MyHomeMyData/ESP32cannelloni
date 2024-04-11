@@ -59,6 +59,9 @@ To build and flash **VSCode with PlatformIO** or **Arduino IDE** can be used.
     ### **WORK IN PROGRESS**
 -->
 
+### 0.3.1 (2024-04-11)
+* (MyHomeMyData) Hint for start of cannelloni corrected
+
 ### 0.3.0 (2024-04-10)
 * (MyHomeMyData) Added option for Web-Updates, added Reset-Button
 
