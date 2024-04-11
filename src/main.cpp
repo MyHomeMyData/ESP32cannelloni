@@ -63,9 +63,9 @@ SOFTWARE.
                             // https://github.com/sandeepmistry/arduino-CAN/blob/master/README.md
 
 #ifdef UDP_PROTOCOL
-const char* PGM_INFO = "Cannelloni light for ESP32 V0.3.0 UDP";
+const char* PGM_INFO = "Cannelloni light for ESP32 V0.3.1 UDP";
 #else
-const char* PGM_INFO = "Cannelloni light for ESP32 V0.3.0 TCP";
+const char* PGM_INFO = "Cannelloni light for ESP32 V0.3.1 TCP";
 #endif
 
 #ifdef UDP_PROTOCOL
@@ -587,7 +587,10 @@ void sendCanDataToHost() {
         htmlLog(cbuf);
         Serial.println(cbuf);
         udpRemote.close();    // Close UDP connection
-        delay(5000);
+        for (int i=0;i<500;i++) {
+          loopWebServer();
+          delay(10);
+        }
         server.client().stop();
         ESP.restart();
       }
@@ -628,7 +631,10 @@ void sendCanDataToHost() {
         htmlLog(cbuf);
         Serial.println(cbuf);
         client.stop();    // Close connection to server
-        delay(5000);
+        for (int i=0;i<500;i++) {
+          loopWebServer();
+          delay(10);
+        }
         server.client().stop();
         ESP.restart();
       }

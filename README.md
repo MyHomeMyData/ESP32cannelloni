@@ -39,7 +39,7 @@ To build and flash **VSCode with PlatformIO** or **Arduino IDE** can be used.
     * check pin assignments for connection to can transceiver
     * adapt CAN baudrate
     * limit range of CAN IDs to what you really need (speed and resources of a ESP32 are limited!). 
-* Build the project and flash it to the ESP32
+* Build the project and flash it to the ESP32. In the web interface an option for OTA update is available. It's also possible to trigger a restart of ESP32.
 * Start virtual CAN bus and cannelloni server on you linux host. Please refer to cannelloni project for details.
 * When using **UDP protocol**:
     * Power on the ESP32
