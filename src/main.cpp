@@ -49,7 +49,7 @@ SOFTWARE.
 
 */
 
-#include "user_config.h"    // Import user specific configuration data
+#include "my_user_config.h"    // Import user specific configuration data
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -161,8 +161,6 @@ time_t now;
 double time_now; //Zeitpunkt jetzt
 int lastday=0;
 bool ntp_done = false;
-
-const uint8_t DEBUG = 0;
 
 // Logging:
 String timeStr() {

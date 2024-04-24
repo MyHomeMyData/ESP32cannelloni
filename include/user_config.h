@@ -34,4 +34,6 @@ const long    CAN_BAUDRATE   = 250E3;       // Baudrate if CAN bus. Viessmann E3
 const uint16_t CAN_ID_RX_MIN = 0x250;       // CAN ids below this value will be ignored
 const uint16_t CAN_ID_RX_MAX = 0x6ff;       // CAN ids beyond this value will be ignored
 
+const uint8_t DEBUG = 0;
+
 // End of user configuration
