@@ -1,7 +1,7 @@
 # Cannelloni light for ESP32
-TCP tunnel for CAN bus data
+TCP/IP tunnel for CAN bus data
 
-Supports TCP communication only, no UDP
+Supports UDP and TCP communication, use of UDP is recommended
 
 Sopports standard CAN frames only
 
@@ -28,25 +28,36 @@ Beside the linux machine, e.g. a raspberry pi, you need
 ### Software
 To build and flash **VSCode with PlatformIO** or **Arduino IDE** can be used.
 * This project is using VScode
-* If you prefer Arduino IDE please create a new project, copy content of file `main.cpp` to your sketch and copy file `user_config.h` to the same folder.
+* If you prefer to use Arduino IDE please create a new project, copy content of file `main.cpp` to your sketch and copy file `user_config.h` to the same folder.
 
 ### Get started
 * Install [CAN library by Sandeep Mistry](https://github.com/sandeepmistry/arduino-CAN/blob/master/README.md)
 * Edit `user_config.h`
+    * decide to use UDP (default) or TCP protocol (undefine `UDP_PROTOCOL` by commenting out the coressesponing line) for data exchange with cannelloni host.
     * set ssid and password four your WiFi
     * adapt host address and port of cannelloni server on linux side
     * check pin assignments for connection to can transceiver
     * adapt CAN baudrate
     * limit range of CAN IDs to what you really need (speed and resources of a ESP32 are limited!). 
-* Build the project and flash it to the ESP32
+* Build the project and flash it to the ESP32. In the web interface an option for OTA update is available. It's also possible to trigger a restart of ESP32.
 * Start virtual CAN bus and cannelloni server on you linux host. Please refer to cannelloni project for details.
-* Important: Start cannelloni as server for TCP protocol, e.g. for vcan0 and port 2001:
-```
-cannelloni -I vcan0 -C s -p -t 20000 -l 2001
-```
-* cannelloni now will wait for connection of a client
-* Power on the ESP32. After a couple of seconds it should connect to the cannelloni server
-* ESP32cannelloni provides a simple web interface reachable under `http://ESP32cannelloni/` or `http://ESP32cannelloni.local` dependent on your network configuration.
+* When using **UDP protocol**:
+    * Power on the ESP32
+    * Start cannelloni as suggested in cannelloni docs, e.g. for vcan0, ESP32 running on 192.168.178.43, port 2000 & 2001: `cannelloni -I vcan0 -R 192.168.178.43 -r 2001 -l 2000`
+    * The correct command line will be shown on web interface after start up of ESP32
+* When using **TCP protocol**:
+    * Start cannelloni as server for TCP protocol, e.g. for vcan0 and port 2001: `cannelloni -I vcan0 -C s -p -t 20000 -l 2001`
+    * cannelloni now will wait for connection of a client
+    * Power on the ESP32. After a couple of seconds it should connect to the cannelloni server
+* ESP32cannelloni provides a simple web interface reachable under `http://ESP32cannelloni/` or `http://<IP-address-of-ESP32>/`
+
+### OTA Update
+To do an update via web interface you need the binary of the code.
+* When using VScode the file is availabe after a successful build: `<PATH_TO_YOUR_PROJECT>/.pio/build/<YOUR_ENV>/firmware.bin`.
+* When using Arduino IDE choose menu `Sketch->Export Compiled Binary`. After a successful build the file is located at `<PATH_TO_YOUR_PROJECT>/build/<YOUR_ENV>/<YOUR_INO_FILE_NAME>.bin`.
+* Press button `Upload Firmware`, select binary and press `Update Firmware`. After some time a message `Update Success! Rebooting...` should show up. If this does not happen within about 30 seconds, repeat the procedure.
+
+### Web Interface
 
 ![web interface](image.png)
 
@@ -55,6 +66,21 @@ cannelloni -I vcan0 -C s -p -t 20000 -l 2001
     Placeholder for the next version (at the beginning of the line):
     ### **WORK IN PROGRESS**
 -->
+
+### 0.3.1 (2024-04-11)
+* (MyHomeMyData) Hint for start of cannelloni corrected
+
+### 0.3.0 (2024-04-10)
+* (MyHomeMyData) Added option for Web-Updates, added Reset-Button
+
+### 0.2.2 (2024-04-10)
+* (MyHomeMyData) Force restart of ESP32 after 5 consecutive failures of UDP send attempts
+
+### 0.2.1 (2024-04-04)
+* (MyHomeMyData) Bugfix: Avoid resets during startup
+
+### 0.2.0 (2024-03-31)
+* (MyHomeMyData) Added support for UDP protocol
 
 ### 0.1.3 (2024-03-30)
 * (MyHomeMyData) Bugfix: Buffer pointes were wrong after reconnection to server

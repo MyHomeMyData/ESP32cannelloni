@@ -2,8 +2,8 @@
 
   Cannelloni light for ESP32
 
-  TCP tunnel for CAN bus data
-  Supports TCP communication only, no UDP
+  TCP/IP tunnel for CAN bus data
+  Supports UDP and TCP communication only, use of UDP recommended
 
   Based on project cannelloni: https://github.com/mguentner/cannelloni 
 
@@ -14,7 +14,16 @@
   28.03.2024 MyHomeMyData V0.1.2 Force attempt to reconnect to cannelloni server in case of TCP communication error
                                  Force restart of ESP32 in case of stalled TCP communication
 
-  30.03.2024 MyHomeMyData V0.1.3 Bugfix: Buffer pointes were wrong after reconnection to server
+  31.03.2024 MyHomeMyData V0.2.0 Added support for UDP protocol
+                                 Select protocol via user_config.h
+
+  04.04.2024 MyHomeMyData V0.2.1 Bugfix: Avoid resets during startup
+
+  10.04.2024 MyHomeMyData V0.2.2 Force restart of ESP32 after 5 consecutive failures of UDP send attempts
+
+  10.04.2024 MyHomeMyData V0.3.0 Added option for Web-Updates, added Reset-Button
+
+  11.04.2024 MyHomeMyData V0.3.1 Hint for start of cannelloni corrected
 
 MIT License
 
@@ -40,22 +49,62 @@ SOFTWARE.
 
 */
 
+#include "user_config.h"    // Import user specific configuration data
+
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#ifdef UDP_PROTOCOL
+#include "AsyncUDP.h"       // https://github.com/espressif/arduino-esp32/tree/master/libraries/AsyncUDP
+#endif
 #include <ESPmDNS.h>
+#include <HTTPUpdateServer.h>
 #include <CAN.h>            // CAN library by Sandeep Mistry  
                             // https://github.com/sandeepmistry/arduino-CAN/blob/master/README.md
 
-#include "user_config.h"    // Import user specific configuration data
+#ifdef UDP_PROTOCOL
+const char* PGM_INFO = "Cannelloni light for ESP32 V0.3.1 UDP";
+#else
+const char* PGM_INFO = "Cannelloni light for ESP32 V0.3.1 TCP";
+#endif
 
-const char* PGM_INFO = "Cannelloni light for ESP32 V0.1.3";
+#ifdef UDP_PROTOCOL
+const uint16_t CANNELLONI_VERSION = 2;
+const uint16_t LEN_UDP_HEADER     = 5;
+const uint16_t LEN_CAN_HEADER     = 5;
+const uint16_t LEN_CAN_DATA_MAX   = 8;
+const uint16_t LEN_CAN_MSG_MAX    = LEN_CAN_HEADER+LEN_CAN_DATA_MAX;
+const uint16_t CNT_CAN_MSG_MAX    = 32;     // Max. number of CAN messages within one udp datagram
+const uint16_t LEN_UDP_BUF        = LEN_UDP_HEADER + LEN_CAN_MSG_MAX*CNT_CAN_MSG_MAX;
+const uint16_t CNT_UDP_BUF        = 8;      // Number of udp buffers
+const uint16_t LEN_UDP_DATA_BUF   = LEN_UDP_BUF*CNT_UDP_BUF;
+uint8_t udpdata[LEN_UDP_DATA_BUF];          // Udp Tx buffers
+uint16_t ibuf_write = 0;
+uint16_t ibuf_read  = 0;
+uint16_t udp_lens[CNT_UDP_BUF];             // Lengths of valid data in udp buffers
 
+uint8_t* base_ptr       = udpdata;
+uint8_t* base_ptr_write = base_ptr;
+uint8_t* base_ptr_read  = base_ptr;
+uint8_t* can_ptr_write  = base_ptr_write+LEN_UDP_HEADER;
+
+bool switch_to_next_buf = false;  // Switch to next udp buffer before storing next CAN message
+const int MILLIS_WAIT_MAX = 20;   // Max. waiting time until sending buffered CAN messages
+bool can_storage_busy = false;    // Data storage within canOnReceive() is active
+uint16_t cnt_buf_to_send = 0;     // Number of udp buffers ready to be sent via udp
+uint64_t cnt_udp_sent = 0;        // Total number of udü buffers sent
+
+unsigned long millis_sent_last = 0;
+
+uint16_t udp_tx_seqNo = 0;
+AsyncUDP udpListener;             // Udp listener for receiving packages from cannelloni host
+AsyncUDP udpRemote;               // Upd remote connection to cannelloni host for sending upd packages
+#else
 const String CANNELLONI_TOKEN = "CANNELLONIv1";
+const uint8_t LEN_CAN_DATA_MAX   = 8;
 const uint8_t LEN_CAN_MSG_MAX = 13;     // Max. length of a CAN frame as TCP message: 4 (CAN ID) + 1 (dlc) + 8 (data bytes)
 const int CNT_CAN_MSG_MAX     = 512;    // Max. number of buffered CAN messages
 const int LEN_CAN_BUF         = LEN_CAN_MSG_MAX*CNT_CAN_MSG_MAX;
-
 const int LEN_TCP_BUF         = 1500;
 
 uint8_t can_buf[LEN_CAN_BUF];           // Buffer for CAN frames received on physical CAN bus
@@ -66,6 +115,7 @@ int ibuf_read       = 0;                // Index of next CAN frame for reading
 uint8_t* base_ptr   = can_buf;          // Pointer to start of CAN buffer
 uint8_t* ptr_write  = base_ptr;         // Pointer to next buffer position for writing
 uint8_t* ptr_read   = base_ptr;         // Pointer to next buffer position for reading
+#endif
 
 uint64_t cnt_can_rx_total   = 0;    // Total number of CAN frames received on physical CAN bus
 uint64_t cnt_can_tx_total   = 0;    // Total number of CAN frames transmitted on physical CAN bus
@@ -73,12 +123,15 @@ uint64_t cnt_tcp_rx_total   = 0;    // Total number of tcp frames received from 
 uint64_t cnt_tcp_tx_total   = 0;    // Total number of tcp frames transmitted to cannelloni server (one CAN frame only)
 uint64_t cnt_tcp_tx_pending = 0;    // Number of can frames pending (received but not yet sent to cannelloni server)
 uint16_t cnt_tcp_tx_retries = 0;    // Number of failed tcp transmitions to cannelloni server
+bool canBusy = false;               // canOnReceive() is active
 
 WebServer server(80);
+HTTPUpdateServer httpUpdater;
+
 WiFiClient client;
-bool serverAvailable = false;           // true, if TCP connection to server is established
+bool hostAvailable = false;           // true, if TCP connection to server is established
 bool serverConfirmed = false;           // true, if server sent correct identification string
-uint8_t cnt_wifi_connect_incomplete = 0;       // Counts incomplete connecting attempts to wifi
+uint16_t cnt_wifi_connect_incomplete = 0;       // Counts incomplete connecting attempts to wifi
 
 unsigned long millis_last = 0;
 unsigned long millis_now  = 0;
@@ -126,7 +179,7 @@ void htmlLog(const char * cbuf) {
 
 // Core 0 Tasks:
 void printStats() {
-  if (DEBUG > 0) {
+  if ( (DEBUG > 0) && (hostAvailable) ) {
     Serial.print(timeStr());
     Serial.print(": CAN rx=");
     Serial.print(cnt_can_rx_total);
@@ -142,7 +195,11 @@ void printStats() {
       Serial.print("; tcp_write_max=");
       Serial.print(micros_max);
       Serial.print("; tcp_write_mean=");
+      #ifdef UDP_PROTOCOL
+      Serial.print(micros_total/cnt_udp_sent);
+      #else
       Serial.print(micros_total/cnt_tcp_tx_total);
+      #endif
     }
     Serial.println();
   }
@@ -154,6 +211,7 @@ void localTimeUpdate() {
   localtime_r(&now, &local);
   time_now=mktime(&local);
   if (local.tm_mday != lastday) {
+    Serial.println("Updating local time ...");
     configTzTime(TZ_INFO, NTP_SERVER); 
     getLocalTime(&local, 5000);       // Synchronize with NTP time once per day
     htmlLog("Local time successfully updated via NTP service.");
@@ -167,37 +225,61 @@ void loopWebServer() {
 
 void handleRoot() {
 
-  int mean=0;
   String sc="";
+  String message = "";
 
-  if (!serverAvailable) sc = "NOT connected";
-  if ( (serverAvailable) && (!serverConfirmed) ) sc = "Connected but NOT confirmed";
-  if ( (serverAvailable) && (serverConfirmed) )  sc = "<font color=green><strong>Connected and confirmed</strong></font>";
+  #ifndef UDP_PROTOCOL
+  if (!hostAvailable) sc = "NOT connected";
+  if ( (hostAvailable) && (!serverConfirmed) ) sc = "Connected but NOT confirmed";
+  if ( (hostAvailable) && (serverConfirmed) )  sc = "<font color=green><strong>Connected and confirmed</strong></font>";
+  #endif
 
-  String message="<!DOCTYPE html><html><head><style>table {border-collapse: collapse;} table, td, th {border: 2px solid black; cellpadding: 4px;}</style><meta http-equiv=refresh content=1></head>";
-
+  message += "<!DOCTYPE html><html><head><style>table {border-collapse: collapse;} table, td, th {border: 2px solid black; cellpadding: 4px;}</style><meta http-equiv=refresh content=1></head>";
   message += "<body style=\"background-color:white;\"><font face=\"Calibri\" size=\"2\">";
   message += "<h1>"+String(PGM_INFO)+"</h1>";
   
-  message += "<h2>Cannelloni server: "+sc+"</h2><br>";
+  #ifndef UDP_PROTOCOL
+  message += "<h2>Cannelloni host: "+sc+"</h2><br>";
+  #endif
 
   message += "<table><tr>";
   message += "<th align=center>"+timeStr()+"</th><th align=center>TX</th><th align=center>RX</th></tr>";
   message += "<tr><td align=left>TCP Transmission Summary</td><td align=right>"+String(cnt_tcp_tx_total)+"</td><td align=right>"+String(cnt_tcp_rx_total)+"</td></tr>";
   message += "<tr><td align=left>CAN Transmission Summary</td><td align=right>"+String(cnt_can_tx_total)+"</td><td align=right>"+String(cnt_can_rx_total)+"</td>";
-  message += "</tr></table>";
+  message += "</tr></table><br>";
+
+  message += "<a href=\"update\"><button class=\"button\">Upload Firmware</button></a>";
+  message += "<a href=\"/restart\" target=\"_blank\"><button class=\"button\">RESTART ESP32</button></a>";
 
   message += "<h2>Log:</h2>";
 
   iLogRead = iLogWrite-cnt_log;
   if (iLogRead<0) iLogRead += CNT_LOG_MAX;
-  for (uint8_t i=0; i<cnt_log;i++) {
+  for (uint16_t i=0; i<cnt_log;i++) {
     message += logStrings[(iLogRead+i) % CNT_LOG_MAX] + "<br>";
   }
 
   message += "</font></body></html>"; 
   
   server.send(200,"text/html", message);
+}
+
+void handleRestart() {
+  hostAvailable = false;
+  String message = "<html><head><title>ESP32 restart</title>";
+  message += "<style>body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }</style></head>"+
+  message += "<body><h1>ESP32 is restarting - you may close this tab</h1>";
+  message += "</body></html>";
+  server.send(200,"text/html", message);
+
+  delay(1500);
+  #ifdef UDP_PROTOCOL
+  udpRemote.close();    // Close UDP connection
+  #else
+  client.stop();        // Close TCP connection
+  #endif
+  server.client().stop();
+  ESP.restart();
 }
 
 void handleNotFound(){
@@ -207,6 +289,7 @@ void handleNotFound(){
   server.send(404, "text/plain", message);
 }
 
+#ifndef UDP_PROTOCOL
 bool connectToServer(const char* host, uint16_t port) {
 
   serverConfirmed = false;
@@ -218,7 +301,7 @@ bool connectToServer(const char* host, uint16_t port) {
   Serial.print(port);
   Serial.print(" ");
 
-  unsigned long timeout = millis()+30000;  // 15 seconds timeout
+  unsigned long timeout = millis()+3600000;  // 1 hour timeout
   while ( (!client.connect(host, port)) && (millis()<timeout) ) {
     Serial.print(".");
     loopWebServer();
@@ -259,12 +342,13 @@ bool connectToServer(const char* host, uint16_t port) {
   ptr_write = ptr_read = base_ptr;
   ibuf_read = ibuf_write = 0;
   cnt_can_rx_total = cnt_tcp_tx_total = 0;
+  ibuf_read = ibuf_write = 0;
   micros_max = micros_total = 0;
   return true;
 }
+#endif
 
 void checkWiFi() {
-  millis_now = millis();
   if ((!WiFi.isConnected()) && (millis_wifi_disconnect==0)) {
     millis_wifi_disconnect = millis_now;
   } 
@@ -275,25 +359,118 @@ void checkWiFi() {
   } 
 }
 
+#ifdef UDP_PROTOCOL
+void onUdpListenerPacket(AsyncUDPPacket packet) {
+  uint16_t packet_len = packet.length();
+  if (packet_len >= 10) {
+    uint8_t* p = packet.data();
+    uint8_t version = p[0];
+    uint8_t op_code = p[1];
+    uint8_t seq_no  = p[2];
+    uint16_t frame_cnt = p[3]*256+p[4];
+    cnt_tcp_rx_total += frame_cnt;
+    if ( (version == CANNELLONI_VERSION) && (op_code == 0) ) {
+      int frame = 0;
+      int ofs = 5;
+      while ( (frame<frame_cnt) && (ofs<=packet_len-LEN_UDP_HEADER) ) {
+        ofs += 2;   // Skip 2 bytes for extended CAN ID
+        uint16_t can_id = p[ofs++]*256+p[ofs++];
+        uint8_t dlc = p[ofs++];
+        if (dlc & 0xf0) {
+          sprintf(cbuf, "WARNING: Extended CAN frames are not supported. Skipping.");
+          htmlLog(cbuf);
+          Serial.println(cbuf);
+          ofs += 1 + (dlc & 0x0f);
+          break;
+        }
+        if (ofs<=packet_len-dlc) {
+          CAN.beginPacket(can_id);
+          CAN.write(&p[ofs], dlc);
+          CAN.endPacket();
+          ofs += dlc;
+          delay(5);
+        }
+        cnt_can_tx_total++;
+        frame++;
+      }
+    } else {
+          sprintf(cbuf, "WARNING: Received udp packet has wrong version (%d) or op-code (%d).",version,op_code);
+          htmlLog(cbuf);
+          Serial.println(cbuf);
+    }
+  }
+}
+
+void setupUdpListener(uint16_t port) {
+  if(udpListener.listen(port)) {
+      udpListener.onPacket(onUdpListenerPacket);
+      sprintf(cbuf, "Udp listener started.");
+      htmlLog(cbuf);
+      Serial.println(cbuf);
+      sprintf(cbuf, "Start cannelloni on host, e.g. for vcan0: cannelloni -I vcan0 -R %s -r %d -l %d",WiFi.localIP().toString().c_str(),PORT_LISTEN,PORT_REMOTE);
+      htmlLog(cbuf);
+      Serial.println(cbuf);
+  }
+}
+
+void initBuf(uint8_t seqNo) {
+  base_ptr_write = base_ptr+LEN_UDP_BUF*ibuf_write;
+  can_ptr_write  = base_ptr_write+LEN_UDP_HEADER;
+  base_ptr_write[0] = CANNELLONI_VERSION;
+  base_ptr_write[1] = 0x00;  // OpCode = DATA
+  base_ptr_write[2] = seqNo; // Sequence no.
+  base_ptr_write[3] = 0x00;  // Count MSB
+  base_ptr_write[4] = 0x00;  // Count LSB
+  udp_lens[ibuf_write] = LEN_UDP_HEADER;
+  udp_lens[(ibuf_write+1) % CNT_UDP_BUF] = 0;  // No data yet in next buffer
+}
+
+void switchToNextBuf(uint8_t seqNo) {
+  ibuf_write = (++ibuf_write % CNT_UDP_BUF);
+  initBuf(seqNo);
+}
+
+void checkClient() {
+  if (WiFi.isConnected()) {
+    if (!udpRemote.connected()) {
+      if (hostAvailable) {
+        Serial.println("Connection to host lost.");
+        htmlLog("Connection to host lost.");
+      }
+      hostAvailable = false;
+      udpRemote.close();
+      unsigned long timeout = millis()+5000;
+      while ( (!ntp_done) && (millis()<timeout) ) delay(100);
+      hostAvailable = udpRemote.connect(HOST,PORT_REMOTE);
+      if (hostAvailable) {
+        sprintf(cbuf, "Udp remote connection established.");
+        htmlLog(cbuf);
+        Serial.println(cbuf);
+      }
+    }
+  }
+}
+
+#else
 void checkClient() {
   if (WiFi.isConnected()) {
     if (!client.connected()) {
-      if (serverAvailable) {
+      if (hostAvailable) {
         Serial.println("Connection to server lost.");
         htmlLog("Connection to server lost.");
       }
-      serverAvailable = false;
+      hostAvailable = false;
       serverConfirmed = false;
       client.stop();
       unsigned long timeout = millis()+5000;
       while ( (!ntp_done) && (millis()<timeout) ) delay(100);
-      serverAvailable = connectToServer(HOST, PORT);
+      hostAvailable = connectToServer(HOST, PORT);
     }
   }
 }
 
 void getTcpData() {
-  if (serverAvailable) {
+  if (hostAvailable) {
     size_t len=client.available();
     if (len > 0) {
       if (!serverConfirmed) {
@@ -348,8 +525,81 @@ void getTcpData() {
     }
   }
 }
+#endif
 
-void sendCanDataToServer() {
+#ifdef UDP_PROTOCOL
+void printCanMsg(int id, uint8_t dlc_, uint8_t* data) {
+  Serial.print(timeStr());
+  sprintf(cbuf, ": %03X [%d] ", id, dlc_);
+  Serial.print(cbuf);
+  for (uint8_t i=0;i<dlc_;i++) {
+    sprintf(cbuf,"%02X ",data[i]);
+    Serial.print(cbuf);
+  }
+  Serial.println();
+}
+
+void printUdpBuffer(uint8_t* udp) {
+  uint8_t* ptrCan = udp+LEN_UDP_HEADER;
+  for (int iMsg=0;iMsg<udp[4];iMsg++) {
+    uint8_t dlc_ = ptrCan[4];
+    printCanMsg(ptrCan[3]+(ptrCan[2] << 8), dlc_, ptrCan+5);
+    ptrCan += LEN_CAN_HEADER+dlc_;
+  }
+}
+#endif
+
+void sendCanDataToHost() {
+  #ifdef UDP_PROTOCOL
+  if ( ((millis_now-millis_sent_last) >= MILLIS_WAIT_MAX) && (udp_lens[ibuf_read] > LEN_UDP_HEADER) && (!can_storage_busy) ) {
+    switch_to_next_buf = true;
+    cnt_buf_to_send++;
+  }
+
+  if (cnt_buf_to_send > 0) {
+    // Udp buffer ready to be sent
+    base_ptr_read = base_ptr+LEN_UDP_BUF*ibuf_read;
+    micros_start = micros();
+    size_t size = udp_lens[ibuf_read];
+    size_t sent = udpRemote.write(base_ptr_read, size);
+    micros_stopp = micros();
+    uint64_t micros_diff = micros_stopp-micros_start;
+    micros_total += micros_diff;
+    if (DEBUG > 1) printUdpBuffer(base_ptr_read);
+    if ((micros_stopp-micros_start) > micros_max) {
+      micros_max = micros_stopp-micros_start;
+    }
+    if ((micros_stopp-micros_start) > micros_max) {
+      micros_max = micros_stopp-micros_start;
+    }
+    cnt_tcp_tx_total += base_ptr_read[4];
+    ibuf_read = (++ibuf_read % CNT_UDP_BUF);
+    cnt_buf_to_send--;
+    cnt_udp_sent++;
+    millis_sent_last = millis_now;
+    if (sent != size) {
+      sprintf(cbuf, "ERROR: UDP write() did not send all data: size=%d; sent=%d; duration=%d us",size,sent,micros_diff);
+      htmlLog(cbuf);
+      Serial.println(cbuf);
+      if (++cnt_tcp_tx_retries > 5) {
+        // UDP failed => Force restart of ESP32
+        hostAvailable = false;
+        sprintf(cbuf, "ERROR: UDP write() failed several tims. ESP32 will be restarted after 5 seconds.");
+        htmlLog(cbuf);
+        Serial.println(cbuf);
+        udpRemote.close();    // Close UDP connection
+        for (int i=0;i<500;i++) {
+          loopWebServer();
+          delay(10);
+        }
+        server.client().stop();
+        ESP.restart();
+      }
+    } else {
+      cnt_tcp_tx_retries = 0;
+    }
+  }
+  #else
   if (ptr_write != ptr_read) {
     size_t size = ptr_read[4]+5;
     micros_start = micros();
@@ -382,19 +632,31 @@ void sendCanDataToServer() {
         htmlLog(cbuf);
         Serial.println(cbuf);
         client.stop();    // Close connection to server
-        delay(5000);
+        for (int i=0;i<500;i++) {
+          loopWebServer();
+          delay(10);
+        }
+        server.client().stop();
         ESP.restart();
       }
     }
     cnt_tcp_tx_pending = cnt_can_rx_total - cnt_tcp_tx_total;
   }
+  #endif
 }
 
 void canOnReceive(int packetSize) {
-  if (!serverAvailable) {
+  if (!hostAvailable) {
     //Serial.println("Received CAN frame skipped due to missing Wifi connection.");
     return;
   }
+  if (canBusy) {
+    sprintf(cbuf, "WARNING: canOnReceive() is busy. Skipping CAN frame.");
+    htmlLog(cbuf);
+    Serial.println(cbuf);
+    return;
+  }
+  canBusy = true;
   // received a CAN frame
   if (CAN.packetExtended()) {
     //Serial.print("Received extended CAN frame. Skipping.");
@@ -405,7 +667,7 @@ void canOnReceive(int packetSize) {
     //Serial.print("Received CAN remote transmission request. Skipping.");
     return;
   }
-  if (packetSize > 8) {
+  if (packetSize > LEN_CAN_DATA_MAX) {
     //Serial.print("Bad length of CAN frame. Skipping.");
     return;
   }
@@ -413,6 +675,35 @@ void canOnReceive(int packetSize) {
   uint16_t can_id = CAN.packetId();
   if ( (can_id<CAN_ID_RX_MIN) || (can_id>CAN_ID_RX_MAX) ) return;   // Filter for CAN IDs
 
+  #ifdef UDP_PROTOCOL
+  can_storage_busy = true;
+
+  cnt_can_rx_total++;
+  can_id = CAN.packetId();
+
+  if (switch_to_next_buf) {
+    switch_to_next_buf = false;
+    switchToNextBuf(++udp_tx_seqNo);
+  }
+  base_ptr_write[4]++;    // Increase Udp message count LSB
+
+  *can_ptr_write++ = 0x00;                   // CAN ID bits 24-31
+  *can_ptr_write++ = 0x00;                   // CAN ID bits 16-23
+  *can_ptr_write++ = (can_id >> 8) & 0xff ;  // CAN ID bits 08-15
+  *can_ptr_write++ = can_id & 0xff;          // CAN ID bits 00-07
+  *can_ptr_write++ = packetSize & 0xf;       // CAN DLC
+  CAN.readBytes(can_ptr_write, packetSize);  // Read CAN data
+  can_ptr_write += packetSize;
+  udp_lens[ibuf_write] += LEN_CAN_HEADER+packetSize;
+  if (base_ptr_write[4] >= CNT_CAN_MSG_MAX) {
+    // Max. number of messages in buffer reached
+    switchToNextBuf(++udp_tx_seqNo);
+    cnt_buf_to_send++;
+  }
+  millis_sent_last = millis();
+  can_storage_busy = false;
+  canBusy = false;
+  #else
   uint8_t* ptr = ptr_write;         // Use local pointer
   *ptr++ = 0x00;                    // CAN ID bits 24-31
   *ptr++ = 0x00;                    // CAN ID bits 16-23
@@ -425,6 +716,7 @@ void canOnReceive(int packetSize) {
   // Switch to next message buffer:
   ibuf_write = (++ibuf_write % CNT_CAN_MSG_MAX);
   ptr_write = base_ptr+LEN_CAN_MSG_MAX*ibuf_write;
+  #endif
 }
 
 void WiFiEvent(WiFiEvent_t event)
@@ -442,7 +734,7 @@ void WiFiEvent(WiFiEvent_t event)
             break;
         case ARDUINO_EVENT_WIFI_STA_STOP:
             Serial.println("WiFi clients stopped");
-            serverAvailable = false;
+            hostAvailable = false;
             client.stop();
             break;
         case ARDUINO_EVENT_WIFI_STA_CONNECTED:
@@ -455,12 +747,18 @@ void WiFiEvent(WiFiEvent_t event)
             break;
         case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
             Serial.println("Disconnected from WiFi access point");
-            serverAvailable = false;
+            hostAvailable = false;
+            #ifdef UDP_PROTOCOL
+            udpRemote.close();
+            udpListener.close();
+            #else
             serverConfirmed = false;
             client.stop();
+            #endif
             if (++cnt_wifi_connect_incomplete > 4) {
               Serial.println("WiFi connection failed. Restarting ESP ...");
               delay(100);
+              server.client().stop();
               ESP.restart();
             }
             break;
@@ -474,21 +772,29 @@ void WiFiEvent(WiFiEvent_t event)
             Serial.println(WiFi.getHostname());
             // NTP Zeit aktualisieren
             if (MDNS.begin("esp32")) {
-              Serial.println("MDNS-Responder gestartet.");
+              Serial.println("MDNS-Responder running.");
+              MDNS.addService("http", "tcp", 80);
+              sprintf(cbuf, "HTTPUpdateServer ready! Open http://%s/update in your browser to upload firmware image.", WiFi.getHostname());
+              htmlLog(cbuf);
+              Serial.println(cbuf);
             }
-            Serial.println("Hole NTP Zeit");
             configTzTime(TZ_INFO, NTP_SERVER); 
             getLocalTime(&local, 5000);
             lastday=local.tm_mday;
             localTimeUpdate();
             ntp_done = true;
             cnt_wifi_connect_incomplete = 0;
+            #ifdef UDP_PROTOCOL
+            setupUdpListener(PORT_LISTEN);
+            #endif
+            httpUpdater.setup(&server);
+            server.on("/restart", handleRestart);
             server.begin();
-            Serial.println("HTTP-Server gestartet.");
+            Serial.println("HTTP-server started.");
             break;
         case ARDUINO_EVENT_WIFI_STA_LOST_IP:
             Serial.println("Lost IP address and IP address is reset to 0");
-            serverAvailable = false;
+            hostAvailable = false;
             client.stop();
             server.stop();
             break;
@@ -549,14 +855,15 @@ void WiFiEvent(WiFiEvent_t event)
         default:
             Serial.println("UNKOWN event");
             break;
-    }}
+    }
+  }
 
 void loopCore0(void * pvParameters) {
   unsigned long millis_lastprint = 0;
   for (;;) {
     delay(50);
     localTimeUpdate();
-    if ( (serverAvailable) && ((millis()-millis_lastprint)>10000) ) {
+    if ( (hostAvailable) && ((millis()-millis_lastprint)>10000) ) {
       millis_lastprint = millis();
       printStats();
     }
@@ -568,12 +875,18 @@ void setup()
   Serial.begin(115200);
   delay(100);
 
-  memset(base_ptr,0, LEN_CAN_BUF);   // Initialize can buffer
-  memset(tcp_buf, 0, LEN_TCP_BUF);   // Initialize tcp buffer
+  #ifdef UDP_PROTOCOL
+  initBuf(++udp_tx_seqNo);            // Initialize first Udp buffer
+  #else
+  memset(base_ptr,0, LEN_CAN_BUF);    // Initialize can buffer
+  memset(tcp_buf, 0, LEN_TCP_BUF);    // Initialize tcp buffer
+  #endif
 
   Serial.println(PGM_INFO);
   htmlLog(PGM_INFO);
+  #ifndef UDP_PROTOCOL
   sprintf(cbuf, "Start cannelloni server, e.g. for vcan0: cannelloni -I vcan0 -C s -p -t 20000 -l %d",PORT);
+  #endif
   Serial.println(cbuf);
   Serial.println();
 
@@ -616,11 +929,14 @@ void setup()
 }
 
 void loop() {
+  millis_now = millis();
   checkWiFi();              // Check WiFi connection and do a reconnect if needed
   checkClient();            // Check connection to cannelloni server and try to reconnect if needed
-  if (serverAvailable) {
+  if (hostAvailable) {
+    #ifndef UDP_PROTOCOL
     getTcpData();           // Fetch data from cannelloni server and send it to local CAN bus
-    sendCanDataToServer();  // Check for data available from local CAN bus and send it to cannelloni server
+    #endif
+    sendCanDataToHost();    // Check for data available from local CAN bus and send it to cannelloni server
   }
   loopWebServer();
 }
