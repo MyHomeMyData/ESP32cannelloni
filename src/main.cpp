@@ -162,7 +162,7 @@ double time_now; //Zeitpunkt jetzt
 int lastday=0;
 bool ntp_done = false;
 
-const uint8_t DEBUG = 1;
+const uint8_t DEBUG = 0;
 
 // Logging:
 String timeStr() {
