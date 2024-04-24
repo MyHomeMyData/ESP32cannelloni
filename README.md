@@ -51,6 +51,14 @@ To build and flash **VSCode with PlatformIO** or **Arduino IDE** can be used.
     * Power on the ESP32. After a couple of seconds it should connect to the cannelloni server
 * ESP32cannelloni provides a simple web interface reachable under `http://ESP32cannelloni/` or `http://<IP-address-of-ESP32>/`
 
+### OTA Update
+To do an update via web interface you need the binary of the code.
+* When using VScode the file is availabe after a successful build: `<PATH_TO_YOUR_PROJECT>/.pio/build/<YOUR_ENV>/firmware.bin`.
+* When using Arduino IDE choose menu `Sketch->Export Compiled Binary`. After a successful build the file is located at `<PATH_TO_YOUR_PROJECT>/build/<YOUR_ENV>/<YOUR_INO_FILE_NAME>.bin`.
+* Press button `Upload Firmware`, select binary and press `Update Firmware`. After some time a message `Update Success! Rebooting...` should show up. If this does not happen within about 30 seconds, repeat the procedure.
+
+### Web Interface
+
 ![web interface](image.png)
 
 ## Changelog
