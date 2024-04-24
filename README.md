@@ -82,6 +82,9 @@ To do an update via web interface you need the binary of the code.
 ### 0.2.0 (2024-03-31)
 * (MyHomeMyData) Added support for UDP protocol
 
+### 0.1.3 (2024-03-30)
+* (MyHomeMyData) Bugfix: Buffer pointes were wrong after reconnection to server
+
 ### 0.1.2 (2024-03-28)
 * (MyHomeMyData) Force attempt to reconnect to cannelloni server in case of TCP communication error
 * (MyHomeMyData) Force restart of ESP32 in case of stalled TCP communication
